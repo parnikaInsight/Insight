@@ -31,7 +31,7 @@ pub async fn start_protocol(
     local_key: identity::Keypair,
     local_peer_id: PeerId,
 ) -> Result<(), Box<dyn Error>> {
-    env_logger::init();
+    //env_logger::init(); this messes up w/ bevy: thread '<unnamed>' panicked at 'env_logger::init should not be called after logger initialized: SetLoggerError(())'
 
     println!("{:?}", local_peer_id);
 
