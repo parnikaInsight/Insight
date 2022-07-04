@@ -86,7 +86,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         let priva = identity::Keypair::generate_ed25519();
         let peerid = PeerId::from(priva.public());
         let my_future = networks::protocol::start_protocol(priva, peerid);
-        block_on(my_future).expect("error");
+        block_on(my_future).expect("error"); //send port that swarm chooses to be used by ggrs!!!!!!!
         println!("after");
         // let mut rng = rand::thread_rng();
         // let start_time = Instant::now();
@@ -94,7 +94,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         // while start_time.elapsed() < duration {
         //     // Spinning for 'duration', simulating doing hard work!
         // }
-
         // tx.send(rng.gen_range(0..2000)).unwrap(); //sender sends rand # to receiver
     });
 

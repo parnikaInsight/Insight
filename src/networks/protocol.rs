@@ -56,6 +56,7 @@ pub async fn start_protocol(
 
     // Listen on all interfaces and whatever port the OS assigns.
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+
     //
     //swarm.listen_on("/ip4/10.150.108.167/tcp/51736".parse()?)?;
     swarm = zkademlia::boot(swarm);
