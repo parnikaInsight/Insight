@@ -82,7 +82,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     std::thread::spawn(move || loop { //infinite loop in thread where rand # is created
         // Everything here happens in another thread
         // This is where you could connect to an external data source
-        println!("In thread");
+        println!("thread");
         let priva = identity::Keypair::generate_ed25519();
         let peerid = PeerId::from(priva.public());
         let my_future = networks::protocol::start_protocol(priva, peerid);
