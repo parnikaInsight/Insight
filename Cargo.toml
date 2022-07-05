@@ -24,3 +24,8 @@ async-trait = "0.1.56"
 sha2 = "0.10.2"
 base64ct = "1.5.1"
 crossbeam-channel = "0.5.5"
+multiaddr = "0.14.0"
+ggrs = { git = "https://github.com/gschup/ggrs", features=["sync-send"]}
+bevy_ggrs = {git = "https://github.com/gschup/bevy_ggrs"}
+structopt = "0.3"
+bytemuck = { version = "1.7", features=["derive"]}

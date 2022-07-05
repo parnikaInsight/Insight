@@ -53,6 +53,7 @@ use libp2p::{
     swarm::NetworkBehaviourEventProcess,
     NetworkBehaviour,
 };
+use crossbeam_channel::{bounded, Sender};
 
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
@@ -88,12 +89,24 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for MyBehaviour {
         if let MdnsEvent::Discovered(list) = event {
             for (peer_id, multiaddr) in list {
                 println!("Discovered {}", peer_id);
-                self.kademlia.add_address(&peer_id, multiaddr);
+                self.kademlia.add_address(&peer_id, multiaddr); //send address
                 self.gossipsub.add_explicit_peer(&peer_id);
             }
         }
     }
 }
+// fn send_peers(event: MdnsEvent, sender: Sender<String>,) {
+//     if let MdnsEvent::Discovered(list) = event {
+//         for (peer_id, multiaddr) in list {
+//             println!("Sending {}", peer_id);
+//             sender.send(multiaddr.to_string()); //send address
+//         }
+//     }
+//     else{
+//         println!("No peers to send address of");
+//     }
+// }
+
 impl NetworkBehaviourEventProcess<KademliaEvent> for MyBehaviour {
     // Called when `kademlia` produces an event.
     fn inject_event(&mut self, message: KademliaEvent) {

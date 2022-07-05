@@ -19,55 +19,82 @@ use bevy_rapier2d::prelude::*;
 use crossbeam_channel::{bounded, Receiver};
 use rand::Rng;
 use std::time::{Duration, Instant};
+use multiaddr::{Protocol};
+use ggrs::{P2PSession, PlayerType, SessionBuilder, UdpNonBlockingSocket};
+use structopt::StructOpt;
+use bevy_ggrs::{GGRSPlugin, SessionType};
+use std::net::SocketAddr;
 
-// fn main() {
-//     //random key
-//     let priva = identity::Keypair::generate_ed25519();
-//     // for boot nodes. Create by above^^
-//     // let x: [u8; 68] = [
-//     //     8, 1, 18, 64, 236, 219, 78, 215, 40, 219, 195, 32, 155, 130, 105, 2, 31, 197, 107, 68, 180,
-//     //     113, 242, 11, 55, 254, 89, 219, 224, 73, 147, 124, 229, 211, 138, 11, 38, 25, 174, 72, 28,
-//     //     220, 126, 249, 123, 12, 164, 200, 89, 111, 56, 135, 128, 88, 250, 164, 86, 74, 172, 121,
-//     //     106, 120, 35, 196, 229, 115, 199, 174,
-//     // ];
-//     //let priva = identity::Keypair::from_protobuf_encoding(&x).unwrap();
-//     let peerid = PeerId::from(priva.public());
-//     let my_future = networks::protocol::start_protocol(priva, peerid);
-    
-//     block_on(my_future).expect("error");
+mod box_game;
+use box_game::box_logic;
 
-//     // App::new()
-//     //     .insert_resource(ClearColor(Color::rgb(0.53, 0.53, 0.53)))
-//     //     .add_plugins(DefaultPlugins)
-//     //     .add_startup_system(my_future)
-//     //     .run();
-    
-//     // loop{
-//     //     thread::spawn(|| {
-//     //         networks::protocol::get_msgs(swarm, Topic::new("test-net"));
-//     //     });
-//     //     thread::spawn(|| {
-//     //         simulation::create_app();
-//     //     });
-//     // }pu
+// cargo run -- --local-port 7000 --players localhost 127.0.0.1:7001
+// cargo run -- --local-port 7001 --players 127.0.0.1:7000 localhost
 
+const FPS: usize = 60;
+const ROLLBACK_DEFAULT: &str = "rollback_default";
 
-// }
-
+// structopt will read command line parameters for u
+#[derive(StructOpt)]
+struct Opt {
+    #[structopt(short, long)]
+    local_port: u16,
+    #[structopt(short, long)]
+    players: Vec<String>,
+    #[structopt(short, long)]
+    spectators: Vec<SocketAddr>,
+}
 fn main() {
+    // // read cmd line arguments
+    // let opt = Opt::from_args();
+    // let num_players = opt.players.len(); //number of discovered peers
+    // assert!(num_players > 0);
+
+    // // create a GGRS session
+    // let mut sess_build = SessionBuilder::<box_logic::GGRSConfig>::new()
+    //     .with_num_players(num_players)
+    //     .with_max_prediction_window(12) // (optional) set max prediction window
+    //     .with_input_delay(2); // (optional) set input delay for the local player
+
+    // add players
+    // for (i, player_addr) in opt.players.iter().enumerate() {
+    //     // local player
+    //     if player_addr == "localhost" { //receive my listening on address
+    //         sess_build = sess_build.add_player(PlayerType::Local, i)?;
+    //     } else {
+    //         // remote players
+    //         let remote_addr: SocketAddr = player_addr.parse()?; //receive addr of discovered peers
+    //         sess_build = sess_build.add_player(PlayerType::Remote(remote_addr), i)?;
+    //     }
+    // }
+
+    //let socket = UdpNonBlockingSocket::bind_to_port(opt.local_port)?;
+    //let sess = sess_build.start_p2p_session(socket.from_world())?;
+
     App::new()
+        .insert_resource(Msaa { samples: 4 })
+        .insert_resource(WindowDescriptor { //must come before default plugin
+            width: 720.,
+            height: 720.,
+            title: "GGRS Box Game".to_owned(),
+            ..Default::default()
+        })
         .add_event::<StreamEvent>()
         .add_plugins(DefaultPlugins)
+        //.add_startup_system(box_logic::setup_system)
         .add_startup_system(setup)
         .add_system(read_stream)
         .add_system(spawn_text)
-        .add_system(move_text)
         .run();
 }
 
 #[derive(Deref)]
-struct StreamReceiver(Receiver<u32>);
-struct StreamEvent(u32);
+struct StreamReceiver(Receiver<String>);
+struct StreamEvent(String);
+
+#[derive(Deref)]
+struct PeerAddrReceiver(Receiver<String>);
+struct PeerAddrEvent(String);
 
 #[derive(Deref)]
 struct LoadedFont(Handle<Font>);
@@ -78,32 +105,36 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     camera_bundle.orthographic_projection.scale = 1. / 50.;
     commands.spawn_bundle(camera_bundle);
 
-    let (tx, rx) = bounded::<u32>(10); //10 msg cap, sender/receiver from crossbeam_channel
-    std::thread::spawn(move || loop { //infinite loop in thread where rand # is created
+    let (tx, rx) = bounded(10); //10 msg cap, sender/receiver from crossbeam_channel
+    std::thread::spawn(move || loop { //infinite loop where swarm is created --only runs once since loop in startprotocol
         // Everything here happens in another thread
         // This is where you could connect to an external data source
         println!("thread");
         let priva = identity::Keypair::generate_ed25519();
         let peerid = PeerId::from(priva.public());
-        let my_future = networks::protocol::start_protocol(priva, peerid);
+        let my_future = networks::protocol::start_protocol(priva, peerid, tx.clone());
         block_on(my_future).expect("error"); //send port that swarm chooses to be used by ggrs!!!!!!!
         println!("after");
-        // let mut rng = rand::thread_rng();
-        // let start_time = Instant::now();
-        // let duration = Duration::from_secs_f32(rng.gen_range(0.0..0.2));
-        // while start_time.elapsed() < duration {
-        //     // Spinning for 'duration', simulating doing hard work!
-        // }
-        // tx.send(rng.gen_range(0..2000)).unwrap(); //sender sends rand # to receiver
     });
 
     commands.insert_resource(StreamReceiver(rx)); //custom receiver is inserted as a resource to receive from one channel and send to another
     commands.insert_resource(LoadedFont(asset_server.load("fonts/FiraSans-Bold.ttf")));
+
+    // let (tx1, rx1) = bounded(10); //10 msg cap, sender/receiver from crossbeam_channel
+    // std::thread::spawn(move || loop { //infinite loop where swarm is created --only runs once since loop in startprotocol
+    //     // Everything here happens in another thread
+    //     // This is where you could connect to an external data source
+    //     println!("thread2");
+    //     let my_future = networks::events::send_peers(priva, peerid, tx.clone());
+    //     block_on(my_future).expect("error"); //send port that swarm chooses to be used by ggrs!!!!!!!
+    //     println!("after");
+    // });
 }
 
 // This system reads from the receiver and sends events to Bevy
 fn read_stream(receiver: ResMut<StreamReceiver>, mut events: EventWriter<StreamEvent>) { //access custom receiver
     for from_stream in receiver.try_iter() {
+        println!("from stream: {}", from_stream);
         events.send(StreamEvent(from_stream)); //send custom streamevent from other channel to bevy
     }
 }
@@ -111,39 +142,66 @@ fn read_stream(receiver: ResMut<StreamReceiver>, mut events: EventWriter<StreamE
 fn spawn_text(
     mut commands: Commands,
     mut reader: EventReader<StreamEvent>,
-    loaded_font: Res<LoadedFont>,
-) {
-    let text_style = TextStyle {
-        font: loaded_font.clone(),
-        font_size: 20.0,
-        color: Color::WHITE,
-    };
-    let text_alignment = TextAlignment {
-        vertical: VerticalAlign::Center,
-        horizontal: HorizontalAlign::Center,
-    }; //access custom streamevent in bevy to spawn an entity with text component dependent on that event
+   // mut app: App,
+) {//-> Result<(), Box<dyn std::error::Error>>{
+    // // read cmd line arguments
+    // let opt = Opt::from_args();
+    // let num_players = opt.players.len(); //number of discovered peers
+    // assert!(num_players > 0);
+
+    // // create a GGRS session
+    // let mut sess_build = SessionBuilder::<box_logic::GGRSConfig>::new()
+    //     .with_num_players(num_players)
+    //     .with_max_prediction_window(12) // (optional) set max prediction window
+    //     .with_input_delay(2); // (optional) set input delay for the local player
+
+    // // add players
+    // for (i, player_addr) in opt.players.iter().enumerate() {
+    //     // local player
+    //     if player_addr == "localhost" { //receive my listening on address
+    //         sess_build = sess_build.add_player(PlayerType::Local, i)?;
+    //     } else {
+    //         // remote players
+    //         let remote_addr: SocketAddr = player_addr.parse()?; //receive addr of discovered peers
+    //         sess_build = sess_build.add_player(PlayerType::Remote(remote_addr), i)?;
+    //     }
+    // }
+
+    //access custom streamevent in bevy to spawn an entity with text component dependent on that event
     for (per_frame, event) in reader.iter().enumerate() {
-        commands.spawn_bundle(Text2dBundle {
-            text: Text::with_section(format!("{}", event.0), text_style.clone(), text_alignment),
-            transform: Transform::from_xyz(
-                per_frame as f32 * 100.0 + rand::thread_rng().gen_range(-40.0..40.0),
-                300.0,
-                0.0,
-            ),
-            ..default()
-        });
+        let port_num = &event.0[5..];
+        let socket = UdpNonBlockingSocket::bind_to_port(port_num.parse::<u16>().unwrap());
+        println!("Port: {}", port_num.parse::<u16>().unwrap());
+       // let sess = sess_build.start_p2p_session(socket)?;
+       // let sock_handle: Handle<UdpNonBlockingSocket> = new(Handle);
+       // commands.insert_resource(socket);
+        //let sess = sess_build.start_p2p_session(socket)?;
     }
-}
-//despawn entity
-fn move_text(
-    mut commands: Commands,
-    mut texts: Query<(Entity, &mut Transform), With<Text>>,
-    time: Res<Time>,
-) {
-    for (entity, mut position) in texts.iter_mut() {
-        position.translation -= Vec3::new(0.0, 100.0 * time.delta_seconds(), 0.0);
-        if position.translation.y < -300.0 {
-            commands.entity(entity).despawn();
-        }
-    }
+
+    // GGRSPlugin::<box_logic::GGRSConfig>::new()
+    //     // define frequency of rollback game logic update
+    //     .with_update_frequency(FPS)
+    //     // define system that returns inputs given a player handle, so GGRS can send the inputs around
+    //     .with_input_system(box_logic::input)
+    //     // register types of components AND resources you want to be rolled back
+    //     .register_rollback_type::<Transform>()
+    //     .register_rollback_type::<box_logic::Velocity>()
+    //     .register_rollback_type::<box_logic::FrameCount>()
+    //     // these systems will be executed as part of the advance frame update
+    //     .with_rollback_schedule(
+    //         Schedule::default().with_stage(
+    //             ROLLBACK_DEFAULT,
+    //             SystemStage::parallel()
+    //                 .with_system(box_logic::move_cube_system)
+    //                 .with_system(box_logic::increase_frame_system),
+    //         ),
+    //     )
+    //     // make it happen in the bevy app
+    //     .build(&mut app);
+    
+        // // add your GGRS session
+        // app.insert_resource(sess)
+        // .insert_resource(SessionType::P2PSession)
+
+    //Ok(())
 }
